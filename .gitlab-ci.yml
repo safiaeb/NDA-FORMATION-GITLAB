@@ -1,0 +1,118 @@
+default:
+    tags:
+        - mydockerrunner
+    image: node
+
+variables:
+    STAGING_DOMAIN: http://lumpy-fact-staging.surge.sh/
+    PRODUCTION_DOMAIN: http://lumpy-fact.surge.sh/
+
+stages:
+    - cache
+    - build
+    - test
+    - deploy staging
+    - staging tests
+    - deploy production
+    - production tests
+
+cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+        - node_modules/
+    policy: pull
+
+update cache:
+    stage: cache
+    script:
+        - npm install
+    cache: 
+        key: ${CI_COMMIT_REF_SLUG}
+        paths:
+            - node_modules/
+        policy: push
+    only:
+        - schedules
+        
+build:
+    stage: build
+    script:
+        - echo $CI_COMMIT_SHORT_SHA 
+        - npm install
+        - npm install -g gatsby-cli
+        - gatsby build
+        - sed -i "s/%%VERSION%%/$CI_COMMIT_SHORT_SHA/" ./public/index.html
+    artifacts:
+        paths:
+            - ./public
+    except:
+        - schedules
+
+test artifacts:
+    image: alpine
+    stage: test
+    cache: {}
+    script:
+        - test -f ./public/index.html
+        - grep -q "Gatsby" ./public/index.html
+    except:
+        - schedules
+
+test website:
+    stage: test
+    script:
+        - npm install
+        - npm install -g gatsby-cli
+        - gatsby serve &
+        - sleep 5
+        - curl "http://localhost:9000" | tac | tac |grep -q "Gatsby"
+    except:
+        - schedules
+
+deploy staging:
+    stage: deploy staging
+    cache: {}
+    environment:
+        name: staging
+        url: $STAGING_DOMAIN
+    script:
+        - npm install --global surge
+        - surge --project ./public --domain $STAGING_DOMAIN
+    except:
+        - schedules
+
+test staging:
+    image: alpine
+    stage: staging tests
+    cache: {}
+    script:
+        - apk update
+        - apk upgrade
+        - apk add curl
+        - curl $STAGING_DOMAIN | tac | tac |grep -q "Gatsby"
+    except:
+        - schedules
+
+deploy production:
+    stage: deploy production
+    cache: {}
+    environment:
+        name: production
+        url: $PRODUCTION_DOMAIN
+    script:
+        - npm install --global surge
+        - surge --project ./public --domain $PRODUCTION_DOMAIN
+    except:
+        - schedules
+
+test production:
+    image: alpine
+    stage: production tests
+    cache: {}
+    script:
+        - apk update
+        - apk upgrade
+        - apk add curl
+        - curl $PRODUCTION_DOMAIN | tac | tac |grep -q "Gatsby"
+    except:
+        - schedules
