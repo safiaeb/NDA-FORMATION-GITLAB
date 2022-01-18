@@ -1,0 +1,85 @@
+default:
+    tags:
+        - mydockerrunner
+    image: node
+
+stages:
+    - cache
+    - build
+    - test
+    - deploy
+    - deployment tests
+
+cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+        - node_modules/
+    policy: pull
+
+update cache:
+    stage: cache
+    script:
+        - npm install
+    cache: 
+        key: ${CI_COMMIT_REF_SLUG}
+        paths:
+            - node_modules/
+        policy: push
+    only:
+        - schedules
+        
+build:
+    stage: build
+    script:
+        - echo $CI_COMMIT_SHORT_SHA 
+        - npm install
+        - npm install -g gatsby-cli
+        - gatsby build
+        - sed -i "s/%%VERSION%%/$CI_COMMIT_SHORT_SHA/" ./public/index.html
+    artifacts:
+        paths:
+            - ./public
+    except:
+        - schedules
+
+test artifacts:
+    image: alpine
+    stage: test
+    cache: {}
+    script:
+        - test -f ./public/index.html
+        - grep -q "Gatsby" ./public/index.html
+    except:
+        - schedules
+
+test website:
+    stage: test
+    script:
+        - npm install
+        - npm install -g gatsby-cli
+        - gatsby serve &
+        - sleep 5
+        - curl "http://localhost:9000" | tac | tac |grep -q "Gatsby"
+    except:
+        - schedules
+
+deploy to surge:
+    stage: deploy
+    cache: {}
+    script:
+        - npm install --global surge
+        - surge --project ./public --domain http://lumpy-fact.surge.sh/
+    except:
+        - schedules
+
+test deployment:
+    image: alpine
+    stage: deployment tests
+    cache: {}
+    script:
+        - apk update
+        - apk upgrade
+        - apk add curl
+        - curl "http://lumpy-fact.surge.sh/" | tac | tac |grep -q "Gatsby"
+    except:
+        - schedules
