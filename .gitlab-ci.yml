@@ -5,12 +5,13 @@ default:
 
 variables:
     STAGING_DOMAIN: http://lumpy-fact-staging.surge.sh/
-    PRODUCTION_DOMAIN: http://lumpy-fact.surge.sh/
+    PRODUCTION_DOMAIN: http://lumpy-fact.surge.sh/ 
 
 stages:
     - cache
     - build
     - test
+    - deploy review
     - deploy staging
     - staging tests
     - deploy production
@@ -47,6 +48,9 @@ build:
             - ./public
     except:
         - schedules
+    only:
+        - master
+        - merge_requests
 
 test artifacts:
     image: alpine
@@ -57,6 +61,9 @@ test artifacts:
         - grep -q "Gatsby" ./public/index.html
     except:
         - schedules
+    only:
+        - master
+        - merge_requests
 
 test website:
     stage: test
@@ -66,6 +73,39 @@ test website:
         - gatsby serve &
         - sleep 5
         - curl "http://localhost:9000" | tac | tac |grep -q "Gatsby"
+    except:
+        - schedules
+    only:
+        - master
+        - merge_requests
+
+deploy review:
+    stage: deploy review
+    only:
+        - merge_requests
+    environment:
+        name: review/$CI_COMMIT_REF_NAME
+        url: http://lumpy-fact-$CI_ENVIRONMENT_SLUG.surge.sh/
+        on_stop: stop review
+    script:
+        - npm install --global surge
+        - surge --project ./public --domain http://lumpy-fact-$CI_ENVIRONMENT_SLUG.surge.sh/
+    except:
+        - schedules
+
+stop review:
+    stage: deploy review
+    only:
+        - merge_requests
+    environment:
+        name: review/$CI_COMMIT_REF_NAME
+        action: stop
+    variables:
+        GIT_STRATEGY: none
+    script:
+        - npm install --global surge
+        - surge teardown http://lumpy-fact-$CI_ENVIRONMENT_SLUG.surge.sh/
+    when: manual
     except:
         - schedules
 
@@ -80,6 +120,8 @@ deploy staging:
         - surge --project ./public --domain $STAGING_DOMAIN
     except:
         - schedules
+    only:
+        - master
 
 test staging:
     image: alpine
@@ -92,7 +134,9 @@ test staging:
         - curl $STAGING_DOMAIN | tac | tac |grep -q "Gatsby"
     except:
         - schedules
-
+    only:
+        - master
+        
 deploy production:
     stage: deploy production
     cache: {}
@@ -104,6 +148,10 @@ deploy production:
         - surge --project ./public --domain $PRODUCTION_DOMAIN
     except:
         - schedules
+    when: manual
+    allow_failure: false
+    only : 
+        - master
 
 test production:
     image: alpine
@@ -116,3 +164,5 @@ test production:
         - curl $PRODUCTION_DOMAIN | tac | tac |grep -q "Gatsby"
     except:
         - schedules
+    only : 
+        - master
